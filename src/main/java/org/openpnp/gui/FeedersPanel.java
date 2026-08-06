@@ -618,8 +618,10 @@ public class FeedersPanel extends JPanel implements WizardContainer {
         public void actionPerformed(ActionEvent arg0) {
             UiUtils.submitUiMachineTask(() -> {
                 Feeder feeder = getSelection();
-                // Do the feed and get the nozzle that would be used for the subsequent pick. 
-                Nozzle nozzle = feedFeeder(feeder);
+                // Do the feed and get the nozzle that would be used for the subsequent pick.
+                // Do NOT move the nozzle to the feeder: an operator pressing the manual Feed
+                // button must not trigger unexpected X/Y gantry motion.
+                Nozzle nozzle = feedFeeder(feeder, false);
             });
         }
     };
@@ -649,6 +651,20 @@ public class FeedersPanel extends JPanel implements WizardContainer {
      * @throws Exception
      */
     public static Nozzle feedFeeder(Feeder feeder) throws Exception {
+        return feedFeeder(feeder, true);
+    }
+
+    /**
+     * Perform a job-like feed operations sequence.
+     *
+     * @param feeder
+     * @param moveNozzle if true, the nozzle is passed to the feeder so features like
+     *        Move While Feeding may move it toward the pick location. Pass false for
+     *        manual operation where no X/Y motion is expected.
+     * @return the nozzle to be used for a subsequent pick.
+     * @throws Exception
+     */
+    public static Nozzle feedFeeder(Feeder feeder, boolean moveNozzle) throws Exception {
         if (feeder.getPart() == null) {
             throw new Exception("Feeder "+feeder.getName()+" has no part.");
         }
@@ -673,7 +689,7 @@ public class FeedersPanel extends JPanel implements WizardContainer {
         // Perform the feed.
         nozzle.moveToSafeZ();
         Configuration.get().getScripting().on("Feeder.BeforeFeed", globals);
-        feeder.feed(nozzle);
+        feeder.feed(moveNozzle ? nozzle : null);
         Configuration.get().getScripting().on("Feeder.AfterFeed", globals);
         return nozzle;
     }

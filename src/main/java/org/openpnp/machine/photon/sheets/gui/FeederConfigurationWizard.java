@@ -18,7 +18,6 @@ import org.jdesktop.beansbinding.AutoBinding.UpdateStrategy;
 import org.jdesktop.beansbinding.BeanProperty;
 import org.jdesktop.beansbinding.Bindings;
 import org.openpnp.Translations;
-import org.openpnp.gui.MainFrame;
 import org.openpnp.gui.components.LocationButtonsPanel;
 import org.openpnp.gui.support.AbstractConfigurationWizard;
 import org.openpnp.gui.support.DoubleConverter;
@@ -338,9 +337,9 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 		@Override
 		public void actionPerformed(ActionEvent e) {
 			UiUtils.submitUiMachineTask(() -> {
-				// Pass the currently selected nozzle so Move While Feeding also
-				// works from this test button (it used to pass null).
-				feeder.feed(MainFrame.get().getMachineControls().getSelectedNozzle());
+				// Manual test button: pass no nozzle so the machine never performs
+				// unexpected X/Y motion. Move While Feeding only applies in jobs.
+				feeder.feed(null);
 			});
 		}
 	};

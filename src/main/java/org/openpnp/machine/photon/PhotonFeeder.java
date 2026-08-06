@@ -312,6 +312,17 @@ public class PhotonFeeder extends ReferenceFeeder {
      * @return the expectedTimeToFeed reported by the feeder, in milliseconds.
      */
     private int sendFeedCommand(int distance_mm) throws Exception {
+        // SAFETY: never start the tape while the machine is still moving. The
+        // PhotonFeederData actuator may be configured without machine coordination
+        // (so that status polling can run during head motion), in which case the feed
+        // command could otherwise be sent while a nozzle is still down in - or
+        // retracting out of - the pocket area with a picked part, and the advancing
+        // tape could clip it. At stillstand every nozzle is at safe Z, which clears
+        // everything by definition. This gate covers BOTH the normal feed path and
+        // Feed After Pick, since both send their feed command through this method.
+        Configuration.get().getMachine().getMotionPlanner()
+                .waitForCompletion(null, MotionPlanner.CompletionType.WaitForStillstand);
+
         for (int i = 0; i <= photonProperties.getFeederCommunicationMaxRetry(); i++) {
             findSlotAddressIfNeeded();
             initializeIfNeeded();
@@ -352,6 +363,15 @@ public class PhotonFeeder extends ReferenceFeeder {
         // (previously the move was only issued after the first 50ms sleep).
         if (nozzle != null && Configuration.get().getMachine().isHomed() && getMoveWhileFeeding()) {
             MovableUtils.moveToLocationAtSafeZ(nozzle, getPickLocation().deriveLengths(null, null, nozzle.getEffectiveSafeZ(), null));
+            // Commit the planned motion to the driver WITHOUT waiting for it: with
+            // continuous motion enabled, the motion planner would otherwise hold the
+            // move in its look-ahead queue while this thread blocks polling the feeder,
+            // and the head would only start moving after the feed completed.
+            // CommandStillstand sends the plan for immediate execution (ending settled
+            // at the pick location) and returns right away, so head travel and tape
+            // movement genuinely run in parallel.
+            Configuration.get().getMachine().getMotionPlanner()
+                    .waitForCompletion(nozzle, MotionPlanner.CompletionType.CommandStillstand);
         }
 
         // The feeder gives us expectedTimeToFeed, but it is way too conservative.
@@ -360,7 +380,12 @@ public class PhotonFeeder extends ReferenceFeeder {
         Duration expectedFeedDuration = Duration.ofMillis(expectedTimeToFeedMillis);
         long endTimeNanos = System.nanoTime() + expectedFeedDuration.toNanos() * 3;
         for (int j = 0; j <= photonProperties.getFeederCommunicationMaxRetry() || System.nanoTime() <= endTimeNanos; j++) {
-            Thread.sleep(50); // MAGIC: this feels like a good number, there is no particular reason it is this way.
+            if (j > 0) {
+                Thread.sleep(50); // MAGIC: this feels like a good number, there is no particular reason it is this way.
+            }
+            // The first status request is sent immediately: a bridge/feeder that answers
+            // status event-driven (on feed completion) ends the wait as early as possible,
+            // and an already-completed prepared advance is confirmed in a few milliseconds.
 
             MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
             MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
@@ -450,15 +475,9 @@ public class PhotonFeeder extends ReferenceFeeder {
         }
 
         try {
-            // SAFETY: wait until the nozzle has physically finished retracting to safe Z
-            // with the picked part before the tape starts moving underneath it. The
-            // PhotonFeederData actuator is intentionally not machine-coordinated (so that
-            // status polling can run during head motion), which means the feed command
-            // would otherwise be sent while the Z retract is still in flight - and a tall
-            // component still inside a deep pocket could be clipped by the advancing tape.
-            // At safe Z the part clears everything by definition, regardless of height.
-            Configuration.get().getMachine().getMotionPlanner()
-                    .waitForCompletion(null, MotionPlanner.CompletionType.WaitForStillstand);
+            // Note: sendFeedCommand() waits for machine stillstand before the tape is
+            // started, i.e. the Z retract with the freshly picked part is guaranteed to
+            // have physically completed (nozzle at safe Z) before any tape movement.
 
             if (feedPrepared) {
                 // The pocket that was prepared earlier has just been consumed by this pick
