@@ -903,12 +903,17 @@ public class GcodeDriverSolutions implements Solutions.Subject {
                                 .convertToUnits(gcodeDriver.getUnits()).getValue();
                         double jMin = gcodeDriver.getMinimumRate(3)
                                 .convertToUnits(gcodeDriver.getUnits()).getValue();
+
                         if (dialect == FirmwareType.TinyG) {
                             // Apply jerk limits per axis. 
                             int digits = digitsToExpress(jMin);
                             commandBuilt = "M201.3 ";
                             for (String variable : gcodeDriver.getAxisVariables(machine)) {
-                                commandBuilt += "{"+variable+"Jerk:"+variable+"%."+digits+"f} ";
+                                if (Character.isLowerCase(variable.charAt(0))) {
+                                    commandBuilt += "{"+variable+"Jerk:'"+variable+"%."+digits+"f} ";
+                                } else {
+                                    commandBuilt += "{"+variable+"Jerk:"+variable+"%."+digits+"f} ";
+                                }
                             }
                             // This needs a new-line: "It is an error to put a G-code from group 1 
                             // and a G-code from group 0 on the same line if both of
@@ -920,15 +925,20 @@ public class GcodeDriverSolutions implements Solutions.Subject {
                             int digits = digitsToExpress(aMin);
                             commandBuilt = "{Acceleration:M204 S%."+digits+"f }";
                             if (dialect == FirmwareType.Marlin) {
-                                // Non-conformant G-code parser, needs newline.
+                            // Non-conformant G-code parser, needs newline.
                                 commandBuilt += "\n";
                             }
                         }
+
                         commandBuilt += "G1 ";
                         for (String variable : gcodeDriver.getAxisVariables(machine)) {
-                            // Determine the significant number of digits.
+                        	// Determine the significant number of digits.
                             int digits = digitsAxisResolution(variable, machine);
-                            commandBuilt += "{"+variable+":"+variable+"%."+digits+"f} ";
+                            if (Character.isLowerCase(variable.charAt(0))) {
+                                commandBuilt += "{"+variable+":'"+variable+"%."+digits+"f} ";
+                            } else {
+                                commandBuilt += "{"+variable+":"+variable+"%."+digits+"f} ";
+                            }
                         }
                         int digits = digitsToExpress(vMin*60); // F is per minute
                         commandBuilt += "{FeedRate:F%."+digits+"f} ; move to target";
@@ -938,6 +948,7 @@ public class GcodeDriverSolutions implements Solutions.Subject {
                     }
                     disallowHeadMountables = true;
                     break;
+
                 case MOVE_TO_COMPLETE_COMMAND:
                     // This is provided even if there are no axes on the driver. M400 may still be useful for actuator coordination.
                     if (gcodeDriver.getCommand(null, CommandType.MOVE_TO_COMPLETE_REGEX) == null) {
@@ -956,22 +967,26 @@ public class GcodeDriverSolutions implements Solutions.Subject {
                     }
                     break;
                 case SET_GLOBAL_OFFSETS_COMMAND:
-                    if (hasAxes) {
-                        if (dialect == FirmwareType.TinyG) {
-                            commandBuilt = "G28.3 ";
-                        }
-                        else {
-                            commandBuilt = "G92 ";
-                        }
-                        for (String variable : gcodeDriver.getAxisVariables(machine)) {
-                            commandBuilt += "{"+variable+":"+variable+"%.4f} ";
-                        }
-                        commandBuilt += "; reset coordinates";
-                    }
-                    else if (command != null) {
-                        commandBuilt = "";
-                    }
-                    break;
+                	if (hasAxes) {
+                	    if (dialect == FirmwareType.TinyG) {
+                	        commandBuilt = "G28.3 ";
+                	    }
+                	    else {
+                	        commandBuilt = "G92 ";
+                	    }
+                	    for (String variable : gcodeDriver.getAxisVariables(machine)) {
+                	        if (Character.isLowerCase(variable.charAt(0))) {
+                	            commandBuilt += "{" + variable + ":'" + variable + "%.4f} ";
+                	        } else {
+                	            commandBuilt += "{" + variable + ":" + variable + "%.4f} ";
+                	        }
+                	    }
+                	    commandBuilt += "; reset coordinates";
+                	}
+                	else if (command != null) {
+                	    commandBuilt = "";
+                	}
+                	break;
                 case POST_VISION_HOME_COMMAND:
                     if (command != null) {
                         commandBuilt = "";

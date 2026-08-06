@@ -54,6 +54,25 @@ public class PhotonFeeder extends ReferenceFeeder {
     @Attribute(required = false)
     protected boolean moveWhileFeeding = true;
 
+    @Attribute(required = false)
+    protected boolean feedAfterPick = false;
+
+    /**
+     * True when a tape advance has already been commanded (right after the previous pick,
+     * see postPick()) and has not yet been consumed by a feed() call. Persisted so that a
+     * normal OpenPnP restart does not cause a duplicate tape advance (which would waste
+     * one component).
+     */
+    @Attribute(required = false)
+    protected boolean feedPrepared = false;
+
+    /**
+     * expectedTimeToFeed (in milliseconds) reported by the feeder for the currently
+     * prepared advance. Not persisted; a sensible bound is derived from partPitch if
+     * OpenPnP was restarted in between.
+     */
+    private int preparedFeedExpectedMillis = 0;
+
     public PhotonFeeder() {
         Configuration.get().addListener(new ConfigurationListener.Adapter() {
             @Override
@@ -127,7 +146,29 @@ public class PhotonFeeder extends ReferenceFeeder {
     }
 
     public void setMoveWhileFeeding(boolean moveWhileFeeding) {
+        boolean oldValue = this.moveWhileFeeding;
         this.moveWhileFeeding = moveWhileFeeding;
+        firePropertyChange("moveWhileFeeding", oldValue, moveWhileFeeding);
+    }
+
+    public boolean getFeedAfterPick() {
+        return feedAfterPick;
+    }
+
+    public void setFeedAfterPick(boolean feedAfterPick) {
+        boolean oldValue = this.feedAfterPick;
+        this.feedAfterPick = feedAfterPick;
+        firePropertyChange("feedAfterPick", oldValue, feedAfterPick);
+    }
+
+    public boolean isFeedPrepared() {
+        return feedPrepared;
+    }
+
+    public void setFeedPrepared(boolean feedPrepared) {
+        boolean oldValue = this.feedPrepared;
+        this.feedPrepared = feedPrepared;
+        firePropertyChange("feedPrepared", oldValue, feedPrepared);
     }
 
     @Override
@@ -262,7 +303,15 @@ public class PhotonFeeder extends ReferenceFeeder {
         return actuator;
     }
 
-    private void feed(Nozzle nozzle, int distance_mm) throws Exception {
+    /**
+     * Sends the MoveFeedForward command to the feeder, including slot discovery and
+     * initialization retries. The feeder acknowledges the command immediately and then
+     * performs the tape movement on its own; use waitForFeedCompletion() to wait for the
+     * mechanical move to actually finish.
+     *
+     * @return the expectedTimeToFeed reported by the feeder, in milliseconds.
+     */
+    private int sendFeedCommand(int distance_mm) throws Exception {
         for (int i = 0; i <= photonProperties.getFeederCommunicationMaxRetry(); i++) {
             findSlotAddressIfNeeded();
             initializeIfNeeded();
@@ -286,36 +335,82 @@ public class PhotonFeeder extends ReferenceFeeder {
                 continue;  // We'll initialize it on a retry
             }
 
-            // The feeder gives us expectedTimeToFeed, but it is way too conservative.
-            // Use expectedTimeToFeed to bound how long we will wait,
-            // but use polling to check the status of the feed.
-            Duration expectedFeedDuration = Duration.ofMillis(moveFeedForwardResponse.expectedTimeToFeed);
-            long endTimeNanos = System.nanoTime() + expectedFeedDuration.toNanos() * 3;
-            for (int j = 0; j <= photonProperties.getFeederCommunicationMaxRetry() || System.nanoTime() <= endTimeNanos; j++) {
-                Thread.sleep(50); // MAGIC: this feels like a good number, there is no particular reason it is this way.
-
-                if (j == 0 && nozzle != null && Configuration.get().getMachine().isHomed() && getMoveWhileFeeding()) {
-                    MovableUtils.moveToLocationAtSafeZ(nozzle, getPickLocation().deriveLengths(null, null, nozzle.getEffectiveSafeZ(), null));
-                }
-
-                MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
-                MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
-
-                if (moveFeedStatusResponse == null) {
-                    continue; // Timeout. retry after delay.
-                }
-
-                if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
-                    return;
-                } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
-                    throw new FeedFailureException("Feeder could not reach its destination.");
-                }
-            }
-
-            throw new FeedFailureException("Feeder timed out when we requested a feed status update.");
+            return moveFeedForwardResponse.expectedTimeToFeed;
         }
 
         throw new FeedFailureException("Failed to feed for an unknown reason. Is the feeder inserted?");
+    }
+
+    /**
+     * Polls the feeder until it reports that the last commanded feed completed. While
+     * waiting, optionally (moveWhileFeeding) moves the nozzle at safe Z over the pick
+     * location, so that machine travel and tape movement happen in parallel.
+     */
+    private void waitForFeedCompletion(Nozzle nozzle, int expectedTimeToFeedMillis) throws Exception {
+        // Start moving the nozzle toward the pick location IMMEDIATELY, before the
+        // first polling sleep, so machine travel and tape movement start together
+        // (previously the move was only issued after the first 50ms sleep).
+        if (nozzle != null && Configuration.get().getMachine().isHomed() && getMoveWhileFeeding()) {
+            MovableUtils.moveToLocationAtSafeZ(nozzle, getPickLocation().deriveLengths(null, null, nozzle.getEffectiveSafeZ(), null));
+        }
+
+        // The feeder gives us expectedTimeToFeed, but it is way too conservative.
+        // Use expectedTimeToFeed to bound how long we will wait,
+        // but use polling to check the status of the feed.
+        Duration expectedFeedDuration = Duration.ofMillis(expectedTimeToFeedMillis);
+        long endTimeNanos = System.nanoTime() + expectedFeedDuration.toNanos() * 3;
+        for (int j = 0; j <= photonProperties.getFeederCommunicationMaxRetry() || System.nanoTime() <= endTimeNanos; j++) {
+            Thread.sleep(50); // MAGIC: this feels like a good number, there is no particular reason it is this way.
+
+            MoveFeedStatus moveFeedStatus = new MoveFeedStatus(slotAddress);
+            MoveFeedStatus.Response moveFeedStatusResponse = moveFeedStatus.send(photonBus);
+
+            if (moveFeedStatusResponse == null) {
+                continue; // Timeout. The feeder may be unable to answer while it is moving. Retry after delay.
+            }
+
+            if (moveFeedStatusResponse.error == ErrorTypes.NONE) {
+                return;
+            } else if (moveFeedStatusResponse.error == ErrorTypes.COULD_NOT_REACH) {
+                throw new FeedFailureException("Feeder could not reach its destination.");
+            }
+            // ErrorTypes.FEEDING_IN_PROGRESS and any unknown status: keep polling until
+            // the time bound runs out.
+        }
+
+        throw new FeedFailureException("Feeder timed out when we requested a feed status update.");
+    }
+
+    /**
+     * Timeout bound (milliseconds) used for a prepared advance when the
+     * expectedTimeToFeed reported at postPick() time is no longer known (e.g. after an
+     * OpenPnP restart).
+     */
+    private int preparedFeedFallbackMillis() {
+        return Math.max(700, partPitch * 100);
+    }
+
+    private void feed(Nozzle nozzle, int distance_mm) throws Exception {
+        if (feedPrepared) {
+            // A tape advance was already commanded right after the previous pick
+            // (Feed After Pick, see postPick()). Make sure it has completed.
+            setFeedPrepared(false);
+            int expected = preparedFeedExpectedMillis > 0 ? preparedFeedExpectedMillis
+                    : preparedFeedFallbackMillis();
+            preparedFeedExpectedMillis = 0;
+            waitForFeedCompletion(nozzle, expected);
+
+            if (distance_mm == partPitch) {
+                // This feed cycle was already performed by the prepared advance.
+                Logger.trace("Feeder {} feed satisfied by prepared advance (Feed After Pick).", getName());
+                return;
+            }
+            // A different, explicit distance was requested (e.g. Feed 1mm). The prepared
+            // advance is a physical fact; perform the requested feed in addition to it.
+        }
+
+        int expectedTimeToFeed = sendFeedCommand(distance_mm);
+        waitForFeedCompletion(nozzle, expectedTimeToFeed);
     }
 
     @Override
@@ -335,6 +430,46 @@ public class PhotonFeeder extends ReferenceFeeder {
 
     public void feedOneMm() throws Exception {
         feed(null, 1);
+    }
+
+    /**
+     * Feed After Pick: right after a pick, command the tape advance for the next part and
+     * return without waiting for it. The advance then runs while the machine leaves for
+     * alignment and placement. The next feed() call for this feeder only has to verify
+     * that the advance completed, which usually takes no time at all.
+     */
+    @Override
+    public void postPick(Nozzle nozzle) throws Exception {
+        if (!feedAfterPick) {
+            return;
+        }
+
+        if (getFeedOptions() != FeedOptions.Normal) {
+            // Feeding is disabled or the next feed is to be skipped: do not advance the tape.
+            return;
+        }
+
+        try {
+            if (feedPrepared) {
+                // The pocket that was prepared earlier has just been consumed by this pick
+                // (this can happen with pick retries, or with multiple picks from the same
+                // feeder in one planning cycle). Make sure that advance is fully done
+                // before commanding a new one.
+                setFeedPrepared(false);
+                int expected = preparedFeedExpectedMillis > 0 ? preparedFeedExpectedMillis
+                        : preparedFeedFallbackMillis();
+                waitForFeedCompletion(null, expected);
+            }
+
+            preparedFeedExpectedMillis = sendFeedCommand(partPitch);
+            setFeedPrepared(true);
+            Logger.trace("Feeder {} started Feed After Pick tape advance.", getName());
+        } catch (Exception e) {
+            // A failed pre-feed must never fail the job; the part is already on the
+            // nozzle. The next feed() call will simply perform a normal, blocking feed.
+            preparedFeedExpectedMillis = 0;
+            Logger.warn(e, "Feed After Pick failed for feeder {}. The next feed will be performed normally.", getName());
+        }
     }
 
     @Override

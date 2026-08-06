@@ -18,6 +18,7 @@ import org.jdesktop.beansbinding.AutoBinding.UpdateStrategy;
 import org.jdesktop.beansbinding.BeanProperty;
 import org.jdesktop.beansbinding.Bindings;
 import org.openpnp.Translations;
+import org.openpnp.gui.MainFrame;
 import org.openpnp.gui.components.LocationButtonsPanel;
 import org.openpnp.gui.support.AbstractConfigurationWizard;
 import org.openpnp.gui.support.DoubleConverter;
@@ -56,6 +57,8 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 	private final LocationButtonsPanel offsetLocationPanel;
 	private final JLabel moveWhileFeedingLabel;
 	private final JCheckBox moveWhileFeedingCheckBox;
+	private final JLabel feedAfterPickLabel;
+	private final JCheckBox feedAfterPickCheckBox;
 	private final LocationButtonsPanel slotLocationPanel;
 
 	/**
@@ -182,6 +185,8 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 				FormSpecs.DEFAULT_ROWSPEC,
 				FormSpecs.RELATED_GAP_ROWSPEC,
 				FormSpecs.DEFAULT_ROWSPEC,
+				FormSpecs.RELATED_GAP_ROWSPEC,
+				FormSpecs.DEFAULT_ROWSPEC,
 				FormSpecs.RELATED_GAP_ROWSPEC,}));
 		
 		JLabel xOffsetLabel = new JLabel("X"); //$NON-NLS-1$
@@ -247,6 +252,14 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 		moveWhileFeedingCheckBox = new JCheckBox();
 		locationPanel.add(moveWhileFeedingCheckBox, "4, 8, left, default"); //$NON-NLS-1$
 		moveWhileFeedingCheckBox.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.moveWhileFeedingLabel.toolTipText"));
+
+		feedAfterPickLabel = new JLabel(Translations.getString("FeederConfigurationWizard.LocationPanel.feedAfterPickLabel.text"));
+		locationPanel.add(feedAfterPickLabel, "2, 10, right, default"); //$NON-NLS-1$
+		feedAfterPickLabel.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.feedAfterPickLabel.toolTipText"));
+
+		feedAfterPickCheckBox = new JCheckBox();
+		locationPanel.add(feedAfterPickCheckBox, "4, 10, left, default"); //$NON-NLS-1$
+		feedAfterPickCheckBox.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.feedAfterPickLabel.toolTipText"));
 	}
 
 	AutoBinding<PhotonFeeder, Object, SlotProxy, Object> binding;
@@ -311,6 +324,7 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 		bind(AutoBinding.UpdateStrategy.READ_WRITE, offsets, "rotation", rotOffsetTf, "text", doubleConverter); //$NON-NLS-1$ //$NON-NLS-2$
 
 		addWrappedBinding(feeder, "moveWhileFeeding", moveWhileFeedingCheckBox, "selected"); //$NON-NLS-1$ //$NON-NLS-2$
+		addWrappedBinding(feeder, "feedAfterPick", feedAfterPickCheckBox, "selected"); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
 	private final Action findSlotAddressAction = new AbstractAction(Translations.getString("FeederConfigurationWizard.FindSlotAddressAction.Name")) { //$NON-NLS-1$
@@ -324,7 +338,9 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 		@Override
 		public void actionPerformed(ActionEvent e) {
 			UiUtils.submitUiMachineTask(() -> {
-				feeder.feed(null); // TODO This probably shouldn't be null
+				// Pass the currently selected nozzle so Move While Feeding also
+				// works from this test button (it used to pass null).
+				feeder.feed(MainFrame.get().getMachineControls().getSelectedNozzle());
 			});
 		}
 	};

@@ -54,7 +54,7 @@ import org.openpnp.spi.base.AbstractNozzle;
  *
  */
 public class AxisSolutions implements Solutions.Subject {
-    public static final String[] VALID_AXIS_LETTERS = new String[] { "X", "Y", "Z", "U", "V", "W", "A", "B", "C", "D", "E" };
+    public static final String[] VALID_AXIS_LETTERS = new String[] { "X", "Y", "Z", "U", "V", "W", "A", "B", "C", "D", "E", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z" };
 
     private final ReferenceControllerAxis axis;
     private Machine machine;

@@ -1803,7 +1803,7 @@ public class GcodeDriver extends AbstractReferenceDriver implements Named {
         if (getReportedAxes() == null) {
             return reportedLetters;
         }
-        Pattern p = Pattern.compile("(?<letter>[A-Z]):-?\\d+.\\d+");
+        Pattern p = Pattern.compile("(?<letter>[A-Za-z]):-?\\d+.\\d+");
         Matcher m = p.matcher(getReportedAxes());
         while (m.find()) {
             String letter = m.group("letter");
@@ -1892,7 +1892,7 @@ public class GcodeDriver extends AbstractReferenceDriver implements Named {
             setDetectedFirmware(firmware);
         }
         sendCommand("M114");
-        String reportedAxes = receiveSingleResponse(".*[XYZABCDEUVW]:-?\\d+\\.\\d+.*");
+        String reportedAxes = receiveSingleResponse(".*[XYZUVWABCDabcdefghijklmnopqrstuvwxyz]:-?\\d+\\.\\d+.*");
         if (reportedAxes != null) {
             if (firmware != null) {
                 try {

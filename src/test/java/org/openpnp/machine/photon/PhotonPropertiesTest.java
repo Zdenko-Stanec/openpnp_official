@@ -38,12 +38,10 @@ public class PhotonPropertiesTest {
     }
 
     /**
-     * The number 50 was chosen because the initial shipper of hardware running the photon protocol was Opulo, and they
-     * are shipping with a harness that can support 50 feeders. This is a tradeoff between scan time and being able to
-     * grab all the feeders by default. This number can be increased within reason if need be to an ultimate max of 254.
+     * Mantis update, default 80 Feeders
      */
     @Test
-    public void byDefaultTheMaxFeederAddressIs50() {
-        assertEquals(50, photonProperties.getMaxFeederAddress());
+    public void byDefaultTheMaxFeederAddressIs80() {
+        assertEquals(80, photonProperties.getMaxFeederAddress());
     }
 }
