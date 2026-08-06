@@ -450,6 +450,16 @@ public class PhotonFeeder extends ReferenceFeeder {
         }
 
         try {
+            // SAFETY: wait until the nozzle has physically finished retracting to safe Z
+            // with the picked part before the tape starts moving underneath it. The
+            // PhotonFeederData actuator is intentionally not machine-coordinated (so that
+            // status polling can run during head motion), which means the feed command
+            // would otherwise be sent while the Z retract is still in flight - and a tall
+            // component still inside a deep pocket could be clipped by the advancing tape.
+            // At safe Z the part clears everything by definition, regardless of height.
+            Configuration.get().getMachine().getMotionPlanner()
+                    .waitForCompletion(null, MotionPlanner.CompletionType.WaitForStillstand);
+
             if (feedPrepared) {
                 // The pocket that was prepared earlier has just been consumed by this pick
                 // (this can happen with pick retries, or with multiple picks from the same
