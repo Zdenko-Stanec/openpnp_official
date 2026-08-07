@@ -136,6 +136,15 @@ public class PhotonFeeder extends ReferenceFeeder {
     private static final double VISION_MAX_LINE_RESIDUAL_MM = 0.3;
     /** Tolerance on the 4 mm sprocket grid when validating the detected holes. */
     private static final double VISION_GRID_TOLERANCE_MM = 0.4;
+    /**
+     * The Move While Feeding camera pre-move deliberately stops this short of the pick
+     * location. The final approach is left to the vision routine: a genuinely pending
+     * motion forces the motion planner into a full driver synchronization (M400 +
+     * position report) when waiting for stillstand. Waiting on motion that was already
+     * committed with CommandStillstand returns immediately WITHOUT consulting the
+     * controller - observed on the machine as images captured in flight.
+     */
+    private static final double VISION_PREMOVE_APPROACH_MM = 0.1;
 
     public PhotonFeeder() {
         Configuration.get().addListener(new ConfigurationListener.Adapter() {
@@ -494,11 +503,17 @@ public class PhotonFeeder extends ReferenceFeeder {
                 // With Vision-Assisted Pick it is the CAMERA that must arrive over the
                 // pick area first (the vision snapshot precedes the pick), so pre-move
                 // the camera instead of the nozzle. Camera travel then hides inside the
-                // tape feed time and the snapshot can be taken the moment the feed
-                // confirms. The location keeps the tape Z: for a camera with a virtual
-                // Z axis this sets the viewing plane for correct units per pixel.
+                // tape feed time. The target is deliberately VISION_PREMOVE_APPROACH_MM
+                // short of the pick location: the final approach inside
+                // obtainVisionPickCorrection() is then a genuinely pending motion,
+                // which forces a full driver synchronization (position report) when
+                // waiting for stillstand before the image is taken. The location keeps
+                // the tape Z: for a camera with a virtual Z axis this sets the viewing
+                // plane for correct units per pixel.
                 premove = nozzle.getHead().getDefaultCamera();
-                premoveLocation = getPickLocation().derive(null, null, null, 0.0);
+                premoveLocation = getPickLocation().derive(null, null, null, 0.0)
+                        .add(new Location(LengthUnit.Millimeters,
+                                VISION_PREMOVE_APPROACH_MM, 0, 0, 0));
             }
             MovableUtils.moveToLocationAtSafeZ(premove, premoveLocation);
             // Commit the planned motion to the driver WITHOUT waiting for it: with
@@ -698,11 +713,12 @@ public class PhotonFeeder extends ReferenceFeeder {
             // If Move While Feeding already pre-moved the camera here, this is a no-op.
             MovableUtils.moveToLocationAtSafeZ(camera, nominal.derive(null, null, null, 0.0));
             // Wait for the WHOLE machine to be physically at rest, position confirmed
-            // by the controller. Important: waiting scoped to the camera can return
-            // immediately when its motion was already committed with CommandStillstand
-            // by the Move While Feeding pre-move (observed on the machine as captures
-            // taken in flight over the PCB), so use the same global gate that is
-            // proven in sendFeedCommand().
+            // by the controller. The planner only synchronizes drivers (M400 + position
+            // report) while executing PENDING motions - motion already committed with
+            // CommandStillstand is invisible to this wait. That is why the Move While
+            // Feeding pre-move stops VISION_PREMOVE_APPROACH_MM short: the final
+            // approach above is always a real pending motion, so this wait genuinely
+            // blocks until the controller reports stillstand at the target.
             Configuration.get().getMachine().getMotionPlanner()
                     .waitForCompletion(null, MotionPlanner.CompletionType.WaitForStillstand);
 
