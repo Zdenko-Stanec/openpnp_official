@@ -1,13 +1,16 @@
 package org.openpnp.machine.photon.sheets.gui;
 
 import java.awt.Color;
+import java.awt.FlowLayout;
 import java.awt.event.ActionEvent;
 
 import javax.swing.AbstractAction;
 import javax.swing.Action;
+import javax.swing.Box;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
@@ -18,6 +21,7 @@ import org.jdesktop.beansbinding.AutoBinding.UpdateStrategy;
 import org.jdesktop.beansbinding.BeanProperty;
 import org.jdesktop.beansbinding.Bindings;
 import org.openpnp.Translations;
+import org.openpnp.gui.MainFrame;
 import org.openpnp.gui.components.LocationButtonsPanel;
 import org.openpnp.gui.support.AbstractConfigurationWizard;
 import org.openpnp.gui.support.DoubleConverter;
@@ -29,7 +33,11 @@ import org.openpnp.gui.support.PartsComboBoxModel;
 import org.openpnp.machine.photon.PhotonFeeder;
 import org.openpnp.model.Configuration;
 import org.openpnp.model.Part;
+import org.openpnp.spi.Camera;
 import org.openpnp.util.UiUtils;
+import org.openpnp.vision.pipeline.CvPipeline;
+import org.openpnp.vision.pipeline.ui.CvPipelineEditor;
+import org.openpnp.vision.pipeline.ui.CvPipelineEditorDialog;
 
 import com.jgoodies.forms.layout.ColumnSpec;
 import com.jgoodies.forms.layout.FormLayout;
@@ -58,6 +66,8 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 	private final JCheckBox moveWhileFeedingCheckBox;
 	private final JLabel feedAfterPickLabel;
 	private final JCheckBox feedAfterPickCheckBox;
+	private final JLabel visionAssistedPickLabel;
+	private final JCheckBox visionAssistedPickCheckBox;
 	private final LocationButtonsPanel slotLocationPanel;
 
 	/**
@@ -186,6 +196,8 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 				FormSpecs.DEFAULT_ROWSPEC,
 				FormSpecs.RELATED_GAP_ROWSPEC,
 				FormSpecs.DEFAULT_ROWSPEC,
+				FormSpecs.RELATED_GAP_ROWSPEC,
+				FormSpecs.DEFAULT_ROWSPEC,
 				FormSpecs.RELATED_GAP_ROWSPEC,}));
 		
 		JLabel xOffsetLabel = new JLabel("X"); //$NON-NLS-1$
@@ -259,6 +271,21 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 		feedAfterPickCheckBox = new JCheckBox();
 		locationPanel.add(feedAfterPickCheckBox, "4, 10, left, default"); //$NON-NLS-1$
 		feedAfterPickCheckBox.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.feedAfterPickLabel.toolTipText"));
+
+		visionAssistedPickLabel = new JLabel(Translations.getString("FeederConfigurationWizard.LocationPanel.visionAssistedPickLabel.text"));
+		locationPanel.add(visionAssistedPickLabel, "2, 12, right, default"); //$NON-NLS-1$
+		visionAssistedPickLabel.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.visionAssistedPickLabel.toolTipText"));
+
+		visionAssistedPickCheckBox = new JCheckBox();
+		visionAssistedPickCheckBox.setToolTipText(Translations.getString("FeederConfigurationWizard.LocationPanel.visionAssistedPickLabel.toolTipText"));
+
+		JPanel visionAssistedPickPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		visionAssistedPickPanel.add(visionAssistedPickCheckBox);
+		visionAssistedPickPanel.add(Box.createHorizontalStrut(10));
+		visionAssistedPickPanel.add(new JButton(editPipelineAction));
+		visionAssistedPickPanel.add(Box.createHorizontalStrut(5));
+		visionAssistedPickPanel.add(new JButton(resetPipelineAction));
+		locationPanel.add(visionAssistedPickPanel, "4, 12, 9, 1, left, default"); //$NON-NLS-1$
 	}
 
 	AutoBinding<PhotonFeeder, Object, SlotProxy, Object> binding;
@@ -324,6 +351,7 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 
 		addWrappedBinding(feeder, "moveWhileFeeding", moveWhileFeedingCheckBox, "selected"); //$NON-NLS-1$ //$NON-NLS-2$
 		addWrappedBinding(feeder, "feedAfterPick", feedAfterPickCheckBox, "selected"); //$NON-NLS-1$ //$NON-NLS-2$
+		addWrappedBinding(feeder, "visionAssistedPick", visionAssistedPickCheckBox, "selected"); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
 	private final Action findSlotAddressAction = new AbstractAction(Translations.getString("FeederConfigurationWizard.FindSlotAddressAction.Name")) { //$NON-NLS-1$
@@ -349,6 +377,32 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 		public void actionPerformed(ActionEvent e) {
 			UiUtils.submitUiMachineTask(() -> {
 				feeder.feedOneMm();
+			});
+		}
+	};
+
+	private final Action editPipelineAction = new AbstractAction(Translations.getString("FeederConfigurationWizard.EditPipelineAction.Name")) { //$NON-NLS-1$
+		@Override
+		public void actionPerformed(ActionEvent e) {
+			UiUtils.messageBoxOnException(() -> {
+				// Note: for a live preview, position the camera over the feeder pick
+				// area first (e.g. with the camera jog / position tools). The editor
+				// works on the feeder's own pipeline instance, so edits are kept.
+				Camera camera = Configuration.get().getMachine().getDefaultHead().getDefaultCamera();
+				CvPipeline pipeline = feeder.getPreparedPipeline(camera);
+				CvPipelineEditor editor = new CvPipelineEditor(pipeline);
+				JDialog dialog = new CvPipelineEditorDialog(MainFrame.get(),
+						feeder.getName() + " Pipeline", editor); //$NON-NLS-1$
+				dialog.setVisible(true);
+			});
+		}
+	};
+
+	private final Action resetPipelineAction = new AbstractAction(Translations.getString("FeederConfigurationWizard.ResetPipelineAction.Name")) { //$NON-NLS-1$
+		@Override
+		public void actionPerformed(ActionEvent e) {
+			UiUtils.messageBoxOnException(() -> {
+				feeder.resetPipeline();
 			});
 		}
 	};
