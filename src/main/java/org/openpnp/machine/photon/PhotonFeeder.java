@@ -375,6 +375,33 @@ public class PhotonFeeder extends ReferenceFeeder {
         findSlotAddress(false);
     }
 
+    public void identifyFeeder() throws Exception {
+        for (int i = 0; i <= photonProperties.getFeederCommunicationMaxRetry(); i++) {
+            findSlotAddressIfNeeded();
+            initializeIfNeeded();
+
+            if (!initialized) {
+                continue;
+            }
+
+            verifyFeederLocationIsFullyConfigured();
+
+            IdentifyFeeder identifyFeeder = new IdentifyFeeder(hardwareId);
+            IdentifyFeeder.Response response = identifyFeeder.send(photonBus);
+
+            if (response == null) {
+                continue; // Timeout. retry after delay.
+            }
+
+            if (response.error == ErrorTypes.NONE) {
+                return;
+            } else {
+                Logger.error("{}: Could not identify feeder: {}", getSlotAddress(), response.error.name());
+                return;
+            }
+        }
+    }
+
     public void initializeIfNeeded() throws Exception {
         if (initialized || slotAddress == null) {
             return;

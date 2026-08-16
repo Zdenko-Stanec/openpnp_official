@@ -87,6 +87,8 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 				FormSpecs.RELATED_GAP_COLSPEC,
 				FormSpecs.BUTTON_COLSPEC,
 				FormSpecs.RELATED_GAP_COLSPEC,
+				FormSpecs.BUTTON_COLSPEC,
+				FormSpecs.RELATED_GAP_COLSPEC,
 				FormSpecs.PREF_COLSPEC,
 				FormSpecs.RELATED_GAP_COLSPEC,},
 			new RowSpec[] {
@@ -109,6 +111,9 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 
 		JButton findButton = new JButton(findSlotAddressAction);
 		infoPanel.add(findButton, "6, 4"); //$NON-NLS-1$
+
+		JButton identifyButton = new JButton(identifyFeederAction);
+		infoPanel.add(identifyButton, "8, 4"); //$NON-NLS-1$
 		
 		JPanel partPanel = new JPanel();
 		partPanel.setBorder(new TitledBorder(null, Translations.getString("FeederConfigurationWizard.PartPanel.Border.title"), TitledBorder.LEADING, TitledBorder.TOP, null, new Color(0, 0, 0))); //$NON-NLS-1$
@@ -313,6 +318,7 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 
 		addWrappedBinding(feeder, "hardwareId", hardwareIdValue, "text"); //$NON-NLS-1$ //$NON-NLS-2$
 		bind(UpdateStrategy.READ, slotProxy, "slotAddress", slotAddressValue, "text"); //$NON-NLS-1$ //$NON-NLS-2$
+		bind(UpdateStrategy.READ, slotProxy, "enabled", identifyFeederAction, "enabled"); //$NON-NLS-1$ //$NON-NLS-2$
 
 		addWrappedBinding(feeder, "part", partCb, "selectedItem"); //$NON-NLS-1$ //$NON-NLS-2$
 		addWrappedBinding(feeder, "partPitch", partPitchTf, "text", intConverter); //$NON-NLS-1$ //$NON-NLS-2$
@@ -358,6 +364,13 @@ public class FeederConfigurationWizard extends AbstractConfigurationWizard {
 		@Override
 		public void actionPerformed(ActionEvent e) {
 			UiUtils.submitUiMachineTask(feeder::findSlotAddress);
+		}
+	};
+
+	private final Action identifyFeederAction = new AbstractAction(Translations.getString("FeederConfigurationWizard.IdentifyFeederAction.Name")) { //$NON-NLS-1$
+		@Override
+		public void actionPerformed(ActionEvent e) {
+			UiUtils.submitUiMachineTask(feeder::identifyFeeder);
 		}
 	};
 
