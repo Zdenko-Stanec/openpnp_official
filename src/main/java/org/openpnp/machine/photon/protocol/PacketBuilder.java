@@ -42,6 +42,13 @@ public class PacketBuilder {
         payloadBuffer.put(data & 0xFF);
         return this;
     }
+    
+    public PacketBuilder putArray(int[] data) {
+    	for (int element : data) {
+    		payloadBuffer.put(element & 0xFF);
+    	}
+    	return this;
+    }
 
     public PacketBuilder putUint16(int data) {
         payloadBuffer.put((data >> 8) & 0xFF);
