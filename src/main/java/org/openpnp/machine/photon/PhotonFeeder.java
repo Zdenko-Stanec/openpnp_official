@@ -450,7 +450,7 @@ public class PhotonFeeder extends ReferenceFeeder {
         setFirmwareVersion(builder.toString());
     }
     
-    private void setFirmwareVersion(String firmwareVersion) {
+    public void setFirmwareVersion(String firmwareVersion) {
         String oldValue = this.firmwareVersion;
         this.firmwareVersion = firmwareVersion;
         firePropertyChange("firmwareVersion", oldValue, firmwareVersion);
